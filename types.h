@@ -1,22 +1,63 @@
 #include <windows.h>
 #include <winnt.h>
 #include <stdio.h>
-#ifdef _CPP
+#ifdef __cplusplus
 #include <iostream>
 #endif
 
-typedef VOID _PRINT_DOS_HEADER(
-    PIMAGE_DOS_HEADER dosHeader);
+typedef enum _PE_TYPE{
+    PE_UNKNOWN,
+    PE32,
+    PE64
+}PE_TYPE;
 
-typedef VOID _PRINT_NT_HEADER(
-    PIMAGE_NT_HEADERS ntHeader);
+typedef struct _DOS_LAYER{
+    PIMAGE_DOS_HEADER Header;
+    DWORD OffsetToPE; // = Header->e_lfanew | offset do DOS 16-bit
+} DOS_LAYER;
 
-typedef VOID _PRINT_FILE_HEADER(
-    PIMAGE_FILE_HEADER fileHeader);
+typedef struct _NT_LAYER{
+    PIMAGE_NT_HEADERS Header;
+    PIMAGE_FILE_HEADER FileHeader;
+    PIMAGE_OPTIONAL_HEADER OptionalHeader;
+} NT_LAYER;
 
-typedef VOID _PRINT_OPTIONAL_HEADER(
-    PIMAGE_OPTIONAL_HEADER optHeader);
+typedef struct _PE_FILE{
+    HANDLE hFile;
+    HANDLE hMapping;
+    LPVOID MappedView;
+    DOS_LAYER Dos;
+    NT_LAYER Nt;
+    PE_TYPE Type;
+} PE_FILE;
 
-typedef VOID _PRINT_SECTIONS(
-    PIMAGE_SECTION_HEADER sectionHeader,
-    WORD numberOfSections);
+#ifdef __cplusplus
+extern "C"{
+#endif
+typedef BOOL _LOAD_PE_FILE(
+    PE_FILE *pe, const char *filename
+);
+
+typedef VOID _UNLOAD_PE_FILE(
+    PE_FILE *pe);
+
+typedef VOID _PARSE_DOS_LAYER(
+    PE_FILE *pe);
+
+typedef VOID _PARSE_NT_LAYER(
+    PE_FILE *pe
+);
+
+typedef VOID _PARSE_SECTIONS(
+    PE_FILE *pe
+);
+
+BOOL LoadPEFile(PE_FILE *pe, const char* file);
+VOID UnloadPEFile(PE_FILE *pe);
+VOID ParseDOSLayer(PE_FILE *pe);
+VOID ParseNTLayer(PE_FILE *pe);
+VOID ParseSections(PE_FILE *pe);
+
+#ifdef __cplusplus
+}
+#endif
