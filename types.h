@@ -22,6 +22,11 @@ typedef struct _NT_LAYER{
     PIMAGE_OPTIONAL_HEADER OptionalHeader;
 } NT_LAYER;
 
+typedef struct _SECTION_LAYER{
+    PIMAGE_SECTION_HEADER Header;
+    DWORD OffsetToSection;
+}SECTION_LAYER;
+
 typedef struct _PE_FILE{
     HANDLE hFile;
     HANDLE hMapping;
@@ -29,6 +34,7 @@ typedef struct _PE_FILE{
     DOS_LAYER Dos;
     NT_LAYER Nt;
     PE_TYPE Type;
+    SECTION_LAYER Sections;
 } PE_FILE;
 
 #ifdef __cplusplus

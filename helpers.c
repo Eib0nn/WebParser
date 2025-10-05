@@ -68,36 +68,142 @@ VOID ParseDOSLayer(PE_FILE *pe)
     printf("\t0x%x\t\tFile address of new exe header\n", dos->e_lfanew);
 }
 
-VOID ParseNTLayer(PE_FILE *pe)
+VOID _PARSE_NT_LAYER(PE_FILE *pe)
 {
-    printf("--------------- NT HEADER ---------------\n");
+    // Quero tirar esses 2 if-elses de 64-32 bits, mas é um saco fazer tipos genéricos, vou demorar um pouco
+    // (ainda mais com o conversor junto, talvez nem compense)
+    printf("\n*************** NT HEADERS ***************\n");
+    WORD magic = ((PIMAGE_OPTIONAL_HEADER)pe->Nt.OptionalHeader)->Magic;
+    printf("Magic: 0x%x (%s)\n", magic,
+           (magic == 0x10B) ? "PE32" : (magic == 0x20B) ? "PE32+"
+                                                        : "Unknown");
 
-    WORD magic = pe->Nt.Header->OptionalHeader.Magic;
-    printf("Magic: 0x%x\n", magic);
-
-    // PE32 OFFSET == 28
-    if (magic == 0x10B){ 
-        PIMAGE_NT_HEADERS32 ntHeader32 = (PIMAGE_NT_HEADERS32)((BYTE *)pe->MappedView + pe->Dos.Header->e_lfanew);
-
-        printf("PE Signature: 0x%x\n", ntHeader32->Signature);
-        printf("Machine: 0x%x\n", ntHeader32->FileHeader.Machine);
-        printf("Number of Sections: %d\n", ntHeader32->FileHeader.NumberOfSections);
-        printf("Entry Point RVA: 0x%x\n", ntHeader32->OptionalHeader.AddressOfEntryPoint);
-        printf("Image Base: 0x%x\n", ntHeader32->OptionalHeader.ImageBase);
-    }
-
-    // PE32+ OFFSET == 24 pros optHeaders e images
-    else if (magic == 0x20B){ 
-        PIMAGE_NT_HEADERS64 ntHeader64 = (PIMAGE_NT_HEADERS64)((BYTE *)pe->MappedView + pe->Dos.Header->e_lfanew);
-
-        printf("PE Signature: 0x%x\n", ntHeader64->Signature);
-        printf("Machine: 0x%x\n", ntHeader64->FileHeader.Machine);
-        printf("Number of Sections: %d\n", ntHeader64->FileHeader.NumberOfSections);
-        printf("Entry Point RVA: 0x%x\n", ntHeader64->OptionalHeader.AddressOfEntryPoint);
-        printf("Image Base: 0x%llx\n", ntHeader64->OptionalHeader.ImageBase);
-    }
-    else
+    if (magic == 0x20B) // PE32+
     {
-        printf("Unknown PE type (Magic = 0x%x)\n", magic);
+        PIMAGE_NT_HEADERS64 ntHeader64 = (PIMAGE_NT_HEADERS64)pe->Nt.Header;
+        PIMAGE_FILE_HEADER fh = &ntHeader64->FileHeader;
+        PIMAGE_OPTIONAL_HEADER64 oh = &ntHeader64->OptionalHeader;
+
+        // --- Signature ---
+        printf("\n******* NT HEADERS *******\n");
+        printf("\t0x%x\t\tSignature\n", ntHeader64->Signature);
+
+        // --- File Header ---
+        printf("\n******* FILE HEADER *******\n");
+        printf("\t0x%x\t\tMachine\n", fh->Machine);
+        printf("\t0x%x\t\tNumber of Sections\n", fh->NumberOfSections);
+        printf("\t0x%x\t\tTime Date Stamp\n", fh->TimeDateStamp);
+        printf("\t0x%x\t\tPointer to Symbol Table\n", fh->PointerToSymbolTable);
+        printf("\t0x%x\t\tNumber of Symbols\n", fh->NumberOfSymbols);
+        printf("\t0x%x\t\tSize of Optional Header\n", fh->SizeOfOptionalHeader);
+        printf("\t0x%x\t\tCharacteristics\n", fh->Characteristics);
+
+        // --- Optional Header ---
+        printf("\n******* OPTIONAL HEADER *******\n");
+        printf("\t0x%x\t\tMagic\n", oh->Magic);
+        printf("\t0x%x\t\tMajor Linker Version\n", oh->MajorLinkerVersion);
+        printf("\t0x%x\t\tMinor Linker Version\n", oh->MinorLinkerVersion);
+        printf("\t0x%x\t\tSize Of Code\n", oh->SizeOfCode);
+        printf("\t0x%x\t\tSize Of Initialized Data\n", oh->SizeOfInitializedData);
+        printf("\t0x%x\t\tSize Of Uninitialized Data\n", oh->SizeOfUninitializedData);
+        printf("\t0x%x\t\tAddress Of Entry Point (.text)\n", oh->AddressOfEntryPoint);
+        printf("\t0x%x\t\tBase Of Code\n", oh->BaseOfCode);
+        printf("\t0x%llx\t\tImage Base\n", oh->ImageBase);
+        printf("\t0x%x\t\tSection Alignment\n", oh->SectionAlignment);
+        printf("\t0x%x\t\tFile Alignment\n", oh->FileAlignment);
+        printf("\t0x%x\t\tMajor OS Version\n", oh->MajorOperatingSystemVersion);
+        printf("\t0x%x\t\tMinor OS Version\n", oh->MinorOperatingSystemVersion);
+        printf("\t0x%x\t\tMajor Image Version\n", oh->MajorImageVersion);
+        printf("\t0x%x\t\tMinor Image Version\n", oh->MinorImageVersion);
+        printf("\t0x%x\t\tMajor Subsystem Version\n", oh->MajorSubsystemVersion);
+        printf("\t0x%x\t\tMinor Subsystem Version\n", oh->MinorSubsystemVersion);
+        printf("\t0x%x\t\tWin32 Version Value\n", oh->Win32VersionValue);
+        printf("\t0x%x\t\tSize Of Image\n", oh->SizeOfImage);
+        printf("\t0x%x\t\tSize Of Headers\n", oh->SizeOfHeaders);
+        printf("\t0x%x\t\tCheckSum\n", oh->CheckSum);
+        printf("\t0x%x\t\tSubsystem\n", oh->Subsystem);
+        printf("\t0x%x\t\tDllCharacteristics\n", oh->DllCharacteristics);
+        printf("\t0x%llx\t\tSize Of Stack Reserve\n", oh->SizeOfStackReserve);
+        printf("\t0x%llx\t\tSize Of Stack Commit\n", oh->SizeOfStackCommit);
+        printf("\t0x%llx\t\tSize Of Heap Reserve\n", oh->SizeOfHeapReserve);
+        printf("\t0x%llx\t\tSize Of Heap Commit\n", oh->SizeOfHeapCommit);
+        printf("\t0x%x\t\tLoader Flags\n", oh->LoaderFlags);
+        printf("\t0x%x\t\tNumber Of Rva And Sizes\n", oh->NumberOfRvaAndSizes);
+
+        // --- Data Directories ---
+        printf("\n******* DATA DIRECTORIES *******\n");
+        for (int i = 0; i < IMAGE_NUMBEROF_DIRECTORY_ENTRIES; i++)
+        {
+            DWORD va = oh->DataDirectory[i].VirtualAddress;
+            DWORD sz = oh->DataDirectory[i].Size;
+            if (va || sz)
+            {
+                printf("[%2d] RVA: 0x%-8x  Size: 0x%-8x\n", i, va, sz);
+            }
+        }
+    }
+    else if (magic == 0x10B) // PE32
+    {
+        PIMAGE_NT_HEADERS32 ntHeader32 = (PIMAGE_NT_HEADERS32)pe->Nt.Header;
+        PIMAGE_FILE_HEADER fh = &ntHeader32->FileHeader;
+        PIMAGE_OPTIONAL_HEADER32 oh = &ntHeader32->OptionalHeader;
+
+        // --- Signature ---
+        printf("\n******* NT HEADERS *******\n");
+        printf("\t0x%x\t\tSignature\n", ntHeader32->Signature);
+
+        // --- File Header ---
+        printf("\n******* FILE HEADER *******\n");
+        printf("\t0x%x\t\tMachine\n", fh->Machine);
+        printf("\t0x%x\t\tNumber of Sections\n", fh->NumberOfSections);
+        printf("\t0x%x\t\tTime Date Stamp\n", fh->TimeDateStamp);
+        printf("\t0x%x\t\tPointer to Symbol Table\n", fh->PointerToSymbolTable);
+        printf("\t0x%x\t\tNumber of Symbols\n", fh->NumberOfSymbols);
+        printf("\t0x%x\t\tSize of Optional Header\n", fh->SizeOfOptionalHeader);
+        printf("\t0x%x\t\tCharacteristics\n", fh->Characteristics);
+
+        // --- Optional Header ---
+        printf("\n******* OPTIONAL HEADER *******\n");
+        printf("\t0x%x\t\tMagic\n", oh->Magic);
+        printf("\t0x%x\t\tMajor Linker Version\n", oh->MajorLinkerVersion);
+        printf("\t0x%x\t\tMinor Linker Version\n", oh->MinorLinkerVersion);
+        printf("\t0x%x\t\tSize Of Code\n", oh->SizeOfCode);
+        printf("\t0x%x\t\tSize Of Initialized Data\n", oh->SizeOfInitializedData);
+        printf("\t0x%x\t\tSize Of Uninitialized Data\n", oh->SizeOfUninitializedData);
+        printf("\t0x%x\t\tAddress Of Entry Point (.text)\n", oh->AddressOfEntryPoint);
+        printf("\t0x%x\t\tBase Of Code\n", oh->BaseOfCode);
+        printf("\t0x%llx\t\tImage Base\n", oh->ImageBase);
+        printf("\t0x%x\t\tSection Alignment\n", oh->SectionAlignment);
+        printf("\t0x%x\t\tFile Alignment\n", oh->FileAlignment);
+        printf("\t0x%x\t\tMajor OS Version\n", oh->MajorOperatingSystemVersion);
+        printf("\t0x%x\t\tMinor OS Version\n", oh->MinorOperatingSystemVersion);
+        printf("\t0x%x\t\tMajor Image Version\n", oh->MajorImageVersion);
+        printf("\t0x%x\t\tMinor Image Version\n", oh->MinorImageVersion);
+        printf("\t0x%x\t\tMajor Subsystem Version\n", oh->MajorSubsystemVersion);
+        printf("\t0x%x\t\tMinor Subsystem Version\n", oh->MinorSubsystemVersion);
+        printf("\t0x%x\t\tWin32 Version Value\n", oh->Win32VersionValue);
+        printf("\t0x%x\t\tSize Of Image\n", oh->SizeOfImage);
+        printf("\t0x%x\t\tSize Of Headers\n", oh->SizeOfHeaders);
+        printf("\t0x%x\t\tCheckSum\n", oh->CheckSum);
+        printf("\t0x%x\t\tSubsystem\n", oh->Subsystem);
+        printf("\t0x%x\t\tDllCharacteristics\n", oh->DllCharacteristics);
+        printf("\t0x%llx\t\tSize Of Stack Reserve\n", oh->SizeOfStackReserve);
+        printf("\t0x%llx\t\tSize Of Stack Commit\n", oh->SizeOfStackCommit);
+        printf("\t0x%llx\t\tSize Of Heap Reserve\n", oh->SizeOfHeapReserve);
+        printf("\t0x%llx\t\tSize Of Heap Commit\n", oh->SizeOfHeapCommit);
+        printf("\t0x%x\t\tLoader Flags\n", oh->LoaderFlags);
+        printf("\t0x%x\t\tNumber Of Rva And Sizes\n", oh->NumberOfRvaAndSizes);
+
+        // --- Data Directories ---
+        printf("\n******* DATA DIRECTORIES *******\n");
+        for (int i = 0; i < IMAGE_NUMBEROF_DIRECTORY_ENTRIES; i++)
+        {
+            DWORD va = oh->DataDirectory[i].VirtualAddress;
+            DWORD sz = oh->DataDirectory[i].Size;
+            if (va || sz)
+            {
+                printf("[%2d] RVA: 0x%-8x  Size: 0x%-8x\n", i, va, sz);
+            }
+        }
     }
 }
