@@ -1,2 +1,2 @@
 # WebParser
-Web PE/ELF Parser using C++ 
+Web PE/ELF Parser using C/C++ 

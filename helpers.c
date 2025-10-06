@@ -1,5 +1,21 @@
 #include "types.h"
 
+DWORD RvaToFileOffset(PE_FILE *pe, DWORD rva)
+{
+    // RVA == Relative File Offset, relativo a ImageBase quando o exec é loadado na memória
+    // não tem mapa de memória, então é necessário converter pela section table
+    for (int i = 0; i < pe->Sections.Count; i++)
+    {
+        PIMAGE_SECTION_HEADER s = &pe->Sections.Header[i];
+        DWORD start = s->VirtualAddress;
+        DWORD end = start + s->Misc.VirtualSize;
+
+        if (rva >= start && rva < end)
+            return s->PointerToRawData + (rva - start);
+    }
+    return 0;
+}
+
 BOOL LoadPEFile(PE_FILE *pe, const char *filename)
 {
     pe->hFile = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -26,13 +42,14 @@ BOOL LoadPEFile(PE_FILE *pe, const char *filename)
         return FALSE;
     }
 
-    // apontando os headers ** (_PE_FILE)pe->(_DOS_LAYER)Dos.Header = handle da memoria do bin (MappedView)
+    // apontando os headers DOS ** (_PE_FILE)pe->(_DOS_LAYER)Dos.Header = handle da memoria do bin (MappedView)
     pe->Dos.Header = (PIMAGE_DOS_HEADER)pe->MappedView;
     pe->Dos.OffsetToPE = pe->Dos.Header->e_lfanew;
 
     // cast bizarro por que a merda do windows tem 2 structs pros NtHeaders XDDD (PIMAGE_NT_HEADERS32 // PIMAGE_NT_HEADERS64)
     pe->Nt.Header = (PIMAGE_NT_HEADERS)((BYTE *)pe->MappedView + pe->Dos.OffsetToPE);
-
+    pe->Nt.FileHeader = &pe->Nt.Header->FileHeader;
+    pe->Nt.OptionalHeader = (PIMAGE_OPTIONAL_HEADER)&pe->Nt.Header->OptionalHeader;
     WORD magicNumber = pe->Nt.Header->OptionalHeader.Magic;
     if (magicNumber == 0x10B)
         pe->Type = PE32;
@@ -41,6 +58,12 @@ BOOL LoadPEFile(PE_FILE *pe, const char *filename)
     else
         pe->Type = PE_UNKNOWN;
 
+    
+    // skippando matematica de offsets pq o windows tem um macro pra isso :)
+    pe->Sections.Header = IMAGE_FIRST_SECTION(pe->Nt.Header);
+    pe->Sections.Count = pe->Nt.FileHeader->NumberOfSections;
+    pe->Sections.OffsetToSection = (DWORD)((BYTE *)pe->Sections.Header - (BYTE *)pe->MappedView);
+    
     return TRUE;
 }
 
@@ -68,7 +91,7 @@ VOID ParseDOSLayer(PE_FILE *pe)
     printf("\t0x%x\t\tFile address of new exe header\n", dos->e_lfanew);
 }
 
-VOID _PARSE_NT_LAYER(PE_FILE *pe)
+VOID ParseNTLayer(PE_FILE *pe)
 {
     // Quero tirar esses 2 if-elses de 64-32 bits, mas é um saco fazer tipos genéricos, vou demorar um pouco
     // (ainda mais com o conversor junto, talvez nem compense)
@@ -207,3 +230,46 @@ VOID _PARSE_NT_LAYER(PE_FILE *pe)
         }
     }
 }
+
+VOID ParseSections(PE_FILE *pe)
+{
+    printf("\n*************** SECTION HEADERS ***************\n");
+
+    PIMAGE_SECTION_HEADER sectionHeader = pe->Sections.Header;
+    WORD count = pe->Sections.Count;
+
+    DWORD importDirectoryRVA = ((PIMAGE_OPTIONAL_HEADER)pe->Nt.OptionalHeader)
+                                   ->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]
+                                   .VirtualAddress;
+
+    PIMAGE_SECTION_HEADER importSection = NULL;
+
+    for (int i = 0; i < count; i++, sectionHeader++)
+    {
+        printf("\n[%d] %s\n", i + 1, sectionHeader->Name);
+        printf("\t0x%x\t\tVirtual Size\n", sectionHeader->Misc.VirtualSize);
+        printf("\t0x%x\t\tVirtual Address\n", sectionHeader->VirtualAddress);
+        printf("\t0x%x\t\tSize Of Raw Data\n", sectionHeader->SizeOfRawData);
+        printf("\t0x%x\t\tPointer To Raw Data\n", sectionHeader->PointerToRawData);
+        printf("\t0x%x\t\tPointer To Relocations\n", sectionHeader->PointerToRelocations);
+        printf("\t0x%x\t\tPointer To Line Numbers\n", sectionHeader->PointerToLinenumbers);
+        printf("\t0x%x\t\tNumber Of Relocations\n", sectionHeader->NumberOfRelocations);
+        printf("\t0x%x\t\tNumber Of Line Numbers\n", sectionHeader->NumberOfLinenumbers);
+        printf("\t0x%x\t\tCharacteristics\n", sectionHeader->Characteristics);
+
+        DWORD start = sectionHeader->VirtualAddress;
+        DWORD end = start + sectionHeader->Misc.VirtualSize;
+        if (importDirectoryRVA >= start && importDirectoryRVA < end)
+            importSection = sectionHeader;
+    }
+
+    if (importSection)
+    {
+        printf("\n[+] Import Directory is located in section: %s\n", importSection->Name);
+    }
+    else
+    {
+        printf("\n[!] Import Directory not found in any section!\n");
+    }
+}
+   

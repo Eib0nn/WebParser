@@ -24,6 +24,7 @@ typedef struct _NT_LAYER{
 
 typedef struct _SECTION_LAYER{
     PIMAGE_SECTION_HEADER Header;
+    WORD Count;
     DWORD OffsetToSection;
 }SECTION_LAYER;
 
@@ -58,11 +59,17 @@ typedef VOID _PARSE_SECTIONS(
     PE_FILE *pe
 );
 
+typedef VOID _RVA_TO_FILE_OFFSET(
+    PE_FILE *pe, 
+    DWORD rva
+);
+
 BOOL LoadPEFile(PE_FILE *pe, const char* file);
 VOID UnloadPEFile(PE_FILE *pe);
 VOID ParseDOSLayer(PE_FILE *pe);
 VOID ParseNTLayer(PE_FILE *pe);
 VOID ParseSections(PE_FILE *pe);
+//DWORD RvaToFileOffset(PE_FILE *pe, DWORD rva);
 
 #ifdef __cplusplus
 }
