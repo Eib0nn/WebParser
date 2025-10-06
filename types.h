@@ -69,7 +69,7 @@ VOID UnloadPEFile(PE_FILE *pe);
 VOID ParseDOSLayer(PE_FILE *pe);
 VOID ParseNTLayer(PE_FILE *pe);
 VOID ParseSections(PE_FILE *pe);
-//DWORD RvaToFileOffset(PE_FILE *pe, DWORD rva);
+DWORD RvaToFileOffset(PE_FILE *pe, DWORD rva);
 
 #ifdef __cplusplus
 }
