@@ -63,7 +63,12 @@ BOOL LoadPEFile(PE_FILE *pe, const char *filename)
     pe->Sections.Header = IMAGE_FIRST_SECTION(pe->Nt.Header);
     pe->Sections.Count = pe->Nt.FileHeader->NumberOfSections;
     pe->Sections.OffsetToSection = (DWORD)((BYTE *)pe->Sections.Header - (BYTE *)pe->MappedView);
-    
+
+    // DLL parsing
+    DWORD rva = pe->Nt.OptionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    DWORD off = RvaToFileOffset(pe, rva);
+    pe->Dlls.Header = (PIMAGE_IMPORT_DESCRIPTOR)((BYTE *)pe->MappedView + off);
+    pe->Dlls.IDTOffset = off;
     return TRUE;
 }
 
@@ -272,4 +277,42 @@ VOID ParseSections(PE_FILE *pe)
         printf("\n[!] Import Directory not found in any section!\n");
     }
 }
-   
+
+VOID ParseDLL(PE_FILE *pe)
+{
+    if (!pe->Dlls.Header)
+        return;
+
+    printf("\n*************** IMPORTS ***************\n");
+
+    PIMAGE_IMPORT_DESCRIPTOR imp = pe->Dlls.Header;
+
+    while (imp->Name)
+    {
+        DWORD nameOffset = RvaToFileOffset(pe, imp->Name);
+        char *dllName = (char *)((BYTE *)pe->MappedView + nameOffset);
+        printf("[+] %s\n", dllName);
+
+        DWORD thunkRVA = imp->OriginalFirstThunk ? imp->OriginalFirstThunk : imp->FirstThunk;
+        DWORD thunkOffset = RvaToFileOffset(pe, thunkRVA);
+
+        PIMAGE_THUNK_DATA thunk = (PIMAGE_THUNK_DATA)((BYTE *)pe->MappedView + thunkOffset);
+
+        while (thunk->u1.AddressOfData)
+        {
+            if (IMAGE_SNAP_BY_ORDINAL(thunk->u1.Ordinal))
+            {
+                printf("\tOrdinal: %x\n", (WORD)IMAGE_ORDINAL(thunk->u1.Ordinal));
+            }
+            else
+            {
+                DWORD ibnOffset = RvaToFileOffset(pe, thunk->u1.AddressOfData);
+                PIMAGE_IMPORT_BY_NAME ibn = (PIMAGE_IMPORT_BY_NAME)((BYTE *)pe->MappedView + ibnOffset);
+                printf("\t%s\n", ibn->Name);
+            }
+            thunk++;
+        }
+
+        imp++;
+    }
+}

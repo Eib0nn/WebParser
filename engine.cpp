@@ -1,4 +1,5 @@
 #include "types.h"
+#include <nlohmann/json.hpp>
 
 int main()
 {
@@ -8,10 +9,12 @@ int main()
     _PARSE_DOS_LAYER *ParseDos = &ParseDOSLayer;
     _PARSE_NT_LAYER *ParseNT = &ParseNTLayer;
     _PARSE_SECTIONS* ParseSec = &ParseSections;
+    _PARSE_DLL_IMPORTS* ParseDll = &ParseDLL;
     BOOL hPE = loadFile(&pe, filename);
     ParseDos(&pe);
     ParseNT(&pe);
     ParseSec(&pe);
+    ParseDll(&pe);
         
     /*
     UnmapViewOfFile(mappedView);

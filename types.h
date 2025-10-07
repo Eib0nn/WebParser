@@ -28,6 +28,13 @@ typedef struct _SECTION_LAYER{
     DWORD OffsetToSection;
 }SECTION_LAYER;
 
+typedef struct _DLL_IMPORTS{
+    PIMAGE_IMPORT_DESCRIPTOR Header;
+    DWORD IDTOffset;
+    DWORD thunk;
+    PIMAGE_THUNK_DATA TD;
+}DLL_IMPORT;
+
 typedef struct _PE_FILE{
     HANDLE hFile;
     HANDLE hMapping;
@@ -36,6 +43,7 @@ typedef struct _PE_FILE{
     NT_LAYER Nt;
     PE_TYPE Type;
     SECTION_LAYER Sections;
+    DLL_IMPORT Dlls;
 } PE_FILE;
 
 #ifdef __cplusplus
@@ -59,6 +67,10 @@ typedef VOID _PARSE_SECTIONS(
     PE_FILE *pe
 );
 
+typedef VOID _PARSE_DLL_IMPORTS(
+    PE_FILE *pe
+);
+
 typedef VOID _RVA_TO_FILE_OFFSET(
     PE_FILE *pe, 
     DWORD rva
@@ -69,6 +81,7 @@ VOID UnloadPEFile(PE_FILE *pe);
 VOID ParseDOSLayer(PE_FILE *pe);
 VOID ParseNTLayer(PE_FILE *pe);
 VOID ParseSections(PE_FILE *pe);
+VOID ParseDLL(PE_FILE *pe);
 DWORD RvaToFileOffset(PE_FILE *pe, DWORD rva);
 
 #ifdef __cplusplus
