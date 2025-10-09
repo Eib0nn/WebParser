@@ -4,31 +4,31 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddEndpointsApiExplorer();
-
+builder.Services.AddRouting();
 var app = builder.Build();
 
-app.MapGet("/", () => "PE Parser API is running! 🚀");
+app.MapGet("/", () => "PE Parser API is running on Render");
 
-app.MapPost("/api/parse", async (HttpRequest request) =>
+app.MapPost("/api/parse", async (HttpContext context) =>
 {
-    var file = request.Form.Files["file"];
+    var form = await context.Request.ReadFormAsync();
+    var file = form.Files["file"];
+
     if (file == null)
-        return Results.BadRequest("No file provided");
+        return Results.BadRequest("No file uploaded.");
 
     var tempFile = Path.GetTempFileName();
-    await using (var stream = File.Create(tempFile))
+    await using (var stream = System.IO.File.Create(tempFile))
         await file.CopyToAsync(stream);
 
     try
     {
-        string output = RunParser(tempFile);
+        var output = RunParser(tempFile);
         return Results.Content(output, "application/json");
     }
     finally
     {
-        File.Delete(tempFile);
+        System.IO.File.Delete(tempFile);
     }
 });
 
