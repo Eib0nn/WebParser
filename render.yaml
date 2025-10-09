@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: peparser-backend
+    env: docker
+    region: oregon
+    rootDir: glue
+    plan: free
+    dockerfilePath: glue/Dockerfile
+    envVars:
+      - key: PORT
+        value: 8080

@@ -1,3 +1,13 @@
-<ItemGroup>
-  <None Include="..\engine\engine.exe" Link="engine.exe" CopyToOutputDirectory="Always" />
-</ItemGroup>
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\engine\engine.exe" Link="engine.exe" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
+</Project>
