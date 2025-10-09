@@ -1,12 +1,22 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddEndpointsApiExplorer();
+
 var app = builder.Build();
 
-app.MapPost("/api/parse", async (IFormFile file) =>
+app.MapGet("/", () => "PE Parser API is running! 🚀");
+
+app.MapPost("/api/parse", async (HttpRequest request) =>
 {
+    var file = request.Form.Files["file"];
+    if (file == null)
+        return Results.BadRequest("No file provided");
+
     var tempFile = Path.GetTempFileName();
     await using (var stream = File.Create(tempFile))
         await file.CopyToAsync(stream);
@@ -14,7 +24,6 @@ app.MapPost("/api/parse", async (IFormFile file) =>
     try
     {
         string output = RunParser(tempFile);
-
         return Results.Content(output, "application/json");
     }
     finally
@@ -27,8 +36,7 @@ app.Run();
 
 static string RunParser(string filePath)
 {
-    var exePath = Path.Combine(AppContext.BaseDirectory, "..", "engine", "engine.exe");
-    exePath = Path.GetFullPath(exePath);
+    var exePath = Path.Combine(AppContext.BaseDirectory, "engine.exe");
 
     var psi = new ProcessStartInfo
     {
