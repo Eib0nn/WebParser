@@ -1,56 +1,55 @@
 #include "types.h"
 #include <nlohmann/json.hpp>
+#include <string>
+#include <iostream>
+#include <cstdlib>
+#include <cstring>
+
 using json = nlohmann::json;
 
 extern BOOL LoadPEFile(PE_FILE *pe, const char *filename);
+extern void UnloadPEFile(PE_FILE *pe);
 extern json JsonifyDOSLayer(PE_FILE *pe);
 extern json JsonifyNTLayer(PE_FILE *pe);
 extern json JsonifySections(PE_FILE *pe);
 extern json JsonifyDLLs(PE_FILE *pe);
 
-int main(int argc, char *argv[])
+extern "C"
 {
-    if (argc < 2)
+    char *parse_file(const char *filename)
     {
-        std::cerr << "{\"error\": \"No file path provided\"}" << std::endl;
-        return 1;
+        if (!filename)
+            return nullptr;
+
+        PE_FILE pe = {};
+        if (!LoadPEFile(&pe, filename))
+        {
+            const char *err = "{\"error\": \"Failed to load file\"}";
+            char *out = (char *)malloc(strlen(err) + 1);
+            strcpy(out, err);
+            return out;
+        }
+
+        json output;
+        output["File"] = filename;
+        output["Type"] = (pe.Type == PE32) ? "PE32" : (pe.Type == PE64) ? "PE64"
+                                                                        : "Unknown";
+        output["DOSHeader"] = JsonifyDOSLayer(&pe);
+        output["NTHeaders"] = JsonifyNTLayer(&pe);
+        output["Sections"] = JsonifySections(&pe);
+        output["Imports"] = JsonifyDLLs(&pe);
+
+        std::string s = output.dump(4);
+        char *res = (char *)malloc(s.size() + 1);
+        memcpy(res, s.c_str(), s.size() + 1);
+
+        UnloadPEFile(&pe);
+        return res;
     }
 
-    const char *filename = argv[1];
-    PE_FILE pe;
-
-    if (!LoadPEFile(&pe, filename))
+    void free_parser_output(char *p)
     {
-        std::cerr << "{\"error\": \"Failed to load file\"}" << std::endl;
-        return 1;
+        if (p)
+            free(p);
     }
-
-    json output;
-    output["File"] = filename;
-    output["Type"] = (pe.Type == PE32) ? "PE32" : (pe.Type == PE64) ? "PE64"
-                                                                    : "Unknown";
-    output["DOSHeader"] = JsonifyDOSLayer(&pe);
-    output["NTHeaders"] = JsonifyNTLayer(&pe);
-    output["Sections"] = JsonifySections(&pe);
-    output["Imports"] = JsonifyDLLs(&pe);
-
-    std::cout << output.dump(4) << std::endl;
-    return 0;
-    /*
-    PE_FILE pe;
-    const char* filename = "helloworld.exe";
-    _LOAD_PE_FILE* loadFile = &LoadPEFile;
-    _PARSE_DOS_LAYER *ParseDos = &ParseDOSLayer;
-    _PARSE_NT_LAYER *ParseNT = &ParseNTLayer;
-    _PARSE_SECTIONS* ParseSec = &ParseSections;
-    _PARSE_DLL_IMPORTS* ParseDll = &ParseDLL;
-    BOOL hPE = loadFile(&pe, filename);
-    ParseDos(&pe);
-    ParseNT(&pe);
-    ParseSec(&pe);
-    ParseDll(&pe);
-    UnmapViewOfFile(mappedView);
-    CloseHandle(hMapping);
-    CloseHandle(hFile);
-    */
 }

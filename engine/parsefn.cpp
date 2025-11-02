@@ -3,6 +3,11 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cstring>
 
 using json = nlohmann::json;
 
@@ -30,33 +35,41 @@ DWORD RvaToFileOffset(PE_FILE *pe, DWORD rva)
 
 BOOL LoadPEFile(PE_FILE *pe, const char *filename)
 {
-    pe->hFile = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (pe->hFile == INVALID_HANDLE_VALUE)
+    if (!pe || !filename)
         return FALSE;
 
-    pe->hMapping = CreateFileMappingA(pe->hFile, NULL, PAGE_READONLY, 0, 0, NULL);
-    if (!pe->hMapping)
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0)
+        return FALSE;
+
+    struct stat st;
+    if (fstat(fd, &st) < 0)
     {
-        CloseHandle(pe->hFile);
+        close(fd);
         return FALSE;
     }
 
-    pe->MappedView = MapViewOfFile(pe->hMapping, FILE_MAP_READ, 0, 0, 0);
-    if (!pe->MappedView)
+    void *map = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (map == MAP_FAILED)
     {
-        CloseHandle(pe->hMapping);
-        CloseHandle(pe->hFile);
+        close(fd);
         return FALSE;
     }
+
+    pe->fd = fd;
+    pe->MappedView = map;
+    pe->MappedSize = st.st_size;
 
     pe->Dos.Header = (PIMAGE_DOS_HEADER)pe->MappedView;
-    pe->Dos.OffsetToPE = pe->Dos.Header->e_lfanew;
+    pe->Dos.OffsetToPE = (DWORD)pe->Dos.Header->e_lfanew;
 
-    pe->Nt.Header = (PIMAGE_NT_HEADERS)((BYTE *)pe->MappedView + pe->Dos.OffsetToPE);
+    pe->Nt.Header = (PIMAGE_NT_HEADERS32)((uint8_t *)pe->MappedView + pe->Dos.OffsetToPE);
     pe->Nt.FileHeader = &pe->Nt.Header->FileHeader;
-    pe->Nt.OptionalHeader = (PIMAGE_OPTIONAL_HEADER)&pe->Nt.Header->OptionalHeader;
 
-    WORD magic = pe->Nt.Header->OptionalHeader.Magic;
+    WORD magic = 0;
+    uint8_t *optPtr = (uint8_t *)&pe->Nt.Header->OptionalHeader;
+    magic = *(WORD *)optPtr;
+
     if (magic == 0x10B)
         pe->Type = PE32;
     else if (magic == 0x20B)
@@ -64,15 +77,69 @@ BOOL LoadPEFile(PE_FILE *pe, const char *filename)
     else
         pe->Type = PE_UNKNOWN;
 
-    pe->Sections.Header = IMAGE_FIRST_SECTION(pe->Nt.Header);
-    pe->Sections.Count = pe->Nt.FileHeader->NumberOfSections;
-    pe->Sections.OffsetToSection = (DWORD)((BYTE *)pe->Sections.Header - (BYTE *)pe->MappedView);
+    uint8_t *secPtr = (uint8_t *)pe->Nt.Header + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) + pe->Nt.Header->FileHeader.SizeOfOptionalHeader;
+    pe->Sections.Header = (PIMAGE_SECTION_HEADER)secPtr;
+    pe->Sections.Count = pe->Nt.Header->FileHeader.NumberOfSections;
+    pe->Sections.OffsetToSection = (DWORD)((uint8_t *)pe->Sections.Header - (uint8_t *)pe->MappedView);
 
-    DWORD rva = pe->Nt.OptionalHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
-    DWORD off = RvaToFileOffset(pe, rva);
-    pe->Dlls.Header = (PIMAGE_IMPORT_DESCRIPTOR)((BYTE *)pe->MappedView + off);
-    pe->Dlls.IDTOffset = off;
+    uint8_t *optBase = (uint8_t *)&pe->Nt.Header->OptionalHeader;
+    // em 32x e 64x, o array DataDirectory tem size-fixado, mas na minha estrutura fica diferente,
+    // ent o mais seguro é calcular o diretório de RVA import lendo em um deslocamento conhecido em relação ao OptionalHeader.
+    // o deslocamento pro DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress depende do tamanho do header ent dá pra calcular com base no magic_nb.
+    // tl;dr pior ideia que eu já tive na minha vida
+
+    DWORD importRVA = 0;
+    if (pe->Type == PE32)
+    {
+        PIMAGE_OPTIONAL_HEADER32 oh32 = (PIMAGE_OPTIONAL_HEADER32)&pe->Nt.Header->OptionalHeader;
+        // DataDirectory geralmente começa dps de 96 bytes pro opt_header de 32 bits; mas não coloquei o DataDir na minha estrutura, então dá pra ler do memmap
+
+        uint8_t *possible = (uint8_t *)oh32 + offsetof(IMAGE_OPTIONAL_HEADER32, SizeOfImage) + 4; 
+        
+        uint8_t *dataDirStart = (uint8_t *)oh32 + (offsetof(IMAGE_OPTIONAL_HEADER32, NumberOfRvaAndSizes) + sizeof(DWORD));
+        
+        uint8_t *importEntry = dataDirStart + (IMAGE_DIRECTORY_ENTRY_IMPORT * 8);
+        importRVA = *(DWORD *)importEntry;
+    }
+    else if (pe->Type == PE64)
+    {
+        PIMAGE_OPTIONAL_HEADER64 oh64 = (PIMAGE_OPTIONAL_HEADER64)&pe->Nt.Header->OptionalHeader;
+        uint8_t *dataDirStart = (uint8_t *)oh64 + (offsetof(IMAGE_OPTIONAL_HEADER64, NumberOfRvaAndSizes) + sizeof(DWORD));
+        uint8_t *importEntry = dataDirStart + (IMAGE_DIRECTORY_ENTRY_IMPORT * 8);
+        importRVA = *(DWORD *)importEntry;
+    }
+
+    if (importRVA == 0)
+    {
+        pe->Dlls.Header = NULL;
+        pe->Dlls.IDTOffset = 0;
+    }
+    else
+    {
+        DWORD off = RvaToFileOffset(pe, importRVA);
+        if (off == 0 || off >= pe->MappedSize)
+        {
+            pe->Dlls.Header = NULL;
+            pe->Dlls.IDTOffset = 0;
+        }
+        else
+        {
+            pe->Dlls.Header = (PIMAGE_IMPORT_DESCRIPTOR)((uint8_t *)pe->MappedView + off);
+            pe->Dlls.IDTOffset = off;
+        }
+    }
+
     return TRUE;
+}
+
+void UnloadPEFile(PE_FILE *pe)
+{
+    if (!pe)
+        return;
+    if (pe->MappedView && pe->MappedSize)
+        munmap(pe->MappedView, pe->MappedSize);
+    if (pe->fd >= 0)
+        close(pe->fd);
 }
 
 json JsonifyDOSLayer(PE_FILE *pe)
@@ -80,21 +147,6 @@ json JsonifyDOSLayer(PE_FILE *pe)
     PIMAGE_DOS_HEADER dos = pe->Dos.Header;
     json j;
     j["e_magic"] = to_hex(dos->e_magic);
-    j["e_cblp"] = to_hex(dos->e_cblp);
-    j["e_cp"] = to_hex(dos->e_cp);
-    j["e_crlc"] = to_hex(dos->e_crlc);
-    j["e_cparhdr"] = to_hex(dos->e_cparhdr);
-    j["e_minalloc"] = to_hex(dos->e_minalloc);
-    j["e_maxalloc"] = to_hex(dos->e_maxalloc);
-    j["e_ss"] = to_hex(dos->e_ss);
-    j["e_sp"] = to_hex(dos->e_sp);
-    j["e_csum"] = to_hex(dos->e_csum);
-    j["e_ip"] = to_hex(dos->e_ip);
-    j["e_cs"] = to_hex(dos->e_cs);
-    j["e_lfarlc"] = to_hex(dos->e_lfarlc);
-    j["e_ovno"] = to_hex(dos->e_ovno);
-    j["e_oemid"] = to_hex(dos->e_oemid);
-    j["e_oeminfo"] = to_hex(dos->e_oeminfo);
     j["e_lfanew"] = to_hex(dos->e_lfanew);
     return j;
 }
@@ -102,7 +154,7 @@ json JsonifyDOSLayer(PE_FILE *pe)
 json JsonifyNTLayer(PE_FILE *pe)
 {
     json j;
-    WORD magic = ((PIMAGE_OPTIONAL_HEADER)pe->Nt.OptionalHeader)->Magic;
+    WORD magic = ((PIMAGE_OPTIONAL_HEADER32)pe->Nt.FileHeader)->Magic;
 
     j["Magic"] = to_hex(magic);
     j["Type"] = (magic == 0x10B) ? "PE32" : (magic == 0x20B) ? "PE32+"
@@ -181,6 +233,8 @@ json JsonifyDLLs(PE_FILE *pe)
     while (imp->Name)
     {
         DWORD nameOffset = RvaToFileOffset(pe, imp->Name);
+        if (nameOffset == 0)
+            break;
         char *dllName = (char *)((BYTE *)pe->MappedView + nameOffset);
 
         json dll;
@@ -189,7 +243,10 @@ json JsonifyDLLs(PE_FILE *pe)
 
         DWORD thunkRVA = imp->OriginalFirstThunk ? imp->OriginalFirstThunk : imp->FirstThunk;
         DWORD thunkOffset = RvaToFileOffset(pe, thunkRVA);
-        PIMAGE_THUNK_DATA thunk = (PIMAGE_THUNK_DATA)((BYTE *)pe->MappedView + thunkOffset);
+        if (thunkOffset == 0)
+            break;
+
+        PIMAGE_THUNK_DATA32 thunk = (PIMAGE_THUNK_DATA32)((BYTE *)pe->MappedView + thunkOffset);
 
         while (thunk->u1.AddressOfData)
         {
@@ -202,6 +259,8 @@ json JsonifyDLLs(PE_FILE *pe)
             else
             {
                 DWORD ibnOffset = RvaToFileOffset(pe, thunk->u1.AddressOfData);
+                if (ibnOffset == 0)
+                    break;
                 PIMAGE_IMPORT_BY_NAME ibn = (PIMAGE_IMPORT_BY_NAME)((BYTE *)pe->MappedView + ibnOffset);
                 dll["Functions"].push_back(ibn->Name);
             }

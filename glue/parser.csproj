@@ -6,8 +6,4 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
-  <ItemGroup>
-    <None Include="..\engine\engine.exe" Link="engine.exe" CopyToOutputDirectory="Always" />
-  </ItemGroup>
-
 </Project>

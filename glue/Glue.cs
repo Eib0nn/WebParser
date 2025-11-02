@@ -1,60 +1,22 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using System.Diagnostics;
+using System;
+using System.Runtime.InteropServices;
 
-var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddRouting();
-var app = builder.Build();
-
-app.MapGet("/", () => "PE Parser API is running on Render");
-
-app.MapPost("/api/parse", async (HttpContext context) =>
+class ParserGlue
 {
-    var form = await context.Request.ReadFormAsync();
-    var file = form.Files["file"];
+    [DllImport("libengine.so", EntryPoint = "parse_file", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    public static extern IntPtr parse_file(string filename);
 
-    if (file == null)
-        return Results.BadRequest("No file uploaded.");
+    [DllImport("libengine.so", EntryPoint = "free_parser_output", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void free_parser_output(IntPtr p);
 
-    var tempFile = Path.GetTempFileName();
-    await using (var stream = System.IO.File.Create(tempFile))
-        await file.CopyToAsync(stream);
-
-    try
+    public static string RunParser(string path)
     {
-        var output = RunParser(tempFile);
-        return Results.Content(output, "application/json");
+        IntPtr p = parse_file(path);
+        if (p == IntPtr.Zero)
+            throw new Exception("Parser returned NULL");
+
+        string result = Marshal.PtrToStringAnsi(p) ?? string.Empty;
+        free_parser_output(p);
+        return result;
     }
-    finally
-    {
-        System.IO.File.Delete(tempFile);
-    }
-});
-
-app.Run();
-
-static string RunParser(string filePath)
-{
-    var exePath = Path.Combine(AppContext.BaseDirectory, "engine.exe");
-
-    var psi = new ProcessStartInfo
-    {
-        FileName = exePath,
-        Arguments = $"\"{filePath}\"",
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        UseShellExecute = false,
-        CreateNoWindow = true
-    };
-
-    using var proc = Process.Start(psi);
-    string output = proc!.StandardOutput.ReadToEnd();
-    string error = proc.StandardError.ReadToEnd();
-    proc.WaitForExit();
-
-    if (proc.ExitCode != 0)
-        throw new Exception($"Parser failed: {error}");
-
-    return output;
 }

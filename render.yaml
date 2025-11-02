@@ -3,9 +3,8 @@ services:
     name: peparser-backend
     env: docker
     region: oregon
-    rootDir: glue
     plan: free
-    dockerfilePath: glue/Dockerfile
+    dockerfilePath: ./Dockerfile
     envVars:
-      - key: PORT
-        value: 8080
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
