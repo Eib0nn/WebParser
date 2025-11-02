@@ -295,41 +295,91 @@ json JsonifyDLLs(PE_FILE *pe)
 
     PIMAGE_IMPORT_DESCRIPTOR imp = pe->Dlls.Header;
 
-    while (imp->Name)
+    // Iterate through all import descriptors
+    while (imp->Name != 0)
     {
         DWORD nameOffset = RvaToFileOffset(pe, imp->Name);
-        if (nameOffset == 0)
+        if (nameOffset == 0 || nameOffset >= pe->MappedSize)
             break;
-        char *dllName = (char *)((BYTE *)pe->MappedView + nameOffset);
+
+        char *dllName = (char *)((uint8_t *)pe->MappedView + nameOffset);
 
         json dll;
         dll["DLL"] = dllName;
         dll["Functions"] = json::array();
 
+        // Use OriginalFirstThunk if available, otherwise use FirstThunk
         DWORD thunkRVA = imp->DUMMYUNIONNAME.OriginalFirstThunk ? imp->DUMMYUNIONNAME.OriginalFirstThunk : imp->FirstThunk;
-        DWORD thunkOffset = RvaToFileOffset(pe, thunkRVA);
-        if (thunkOffset == 0)
-            break;
 
-        PIMAGE_THUNK_DATA32 thunk = (PIMAGE_THUNK_DATA32)((BYTE *)pe->MappedView + thunkOffset);
-
-        while (thunk->u1.AddressOfData)
+        if (thunkRVA == 0)
         {
-            if (IMAGE_SNAP_BY_ORDINAL(thunk->u1.Ordinal))
+            dlls.push_back(dll);
+            imp++;
+            continue;
+        }
+
+        DWORD thunkOffset = RvaToFileOffset(pe, thunkRVA);
+        if (thunkOffset == 0 || thunkOffset >= pe->MappedSize)
+        {
+            dlls.push_back(dll);
+            imp++;
+            continue;
+        }
+
+        // Handle both PE32 and PE64 thunk data
+        if (pe->Type == PE64)
+        {
+            PIMAGE_THUNK_DATA64 thunk64 = (PIMAGE_THUNK_DATA64)((uint8_t *)pe->MappedView + thunkOffset);
+
+            while (thunk64->u1.AddressOfData != 0)
             {
-                std::stringstream ord;
-                ord << "Ordinal_" << to_hex(IMAGE_ORDINAL(thunk->u1.Ordinal));
-                dll["Functions"].push_back(ord.str());
+                // Check if imported by ordinal (high bit set)
+                if (thunk64->u1.AddressOfData & 0x8000000000000000ULL)
+                {
+                    WORD ordinal = (WORD)(thunk64->u1.Ordinal & 0xFFFF);
+                    std::stringstream ord;
+                    ord << "Ordinal_" << to_hex(ordinal);
+                    dll["Functions"].push_back(ord.str());
+                }
+                else
+                {
+                    // Imported by name
+                    DWORD ibnOffset = RvaToFileOffset(pe, (DWORD)thunk64->u1.AddressOfData);
+                    if (ibnOffset != 0 && ibnOffset < pe->MappedSize)
+                    {
+                        PIMAGE_IMPORT_BY_NAME ibn = (PIMAGE_IMPORT_BY_NAME)((uint8_t *)pe->MappedView + ibnOffset);
+                        dll["Functions"].push_back(std::string(ibn->Name));
+                    }
+                }
+                thunk64++;
             }
-            else
+        }
+        else // PE32
+        {
+            PIMAGE_THUNK_DATA32 thunk32 = (PIMAGE_THUNK_DATA32)((uint8_t *)pe->MappedView + thunkOffset);
+
+            while (thunk32->u1.AddressOfData != 0)
             {
-                DWORD ibnOffset = RvaToFileOffset(pe, thunk->u1.AddressOfData);
-                if (ibnOffset == 0)
-                    break;
-                PIMAGE_IMPORT_BY_NAME ibn = (PIMAGE_IMPORT_BY_NAME)((BYTE *)pe->MappedView + ibnOffset);
-                dll["Functions"].push_back(ibn->Name);
+                // Check if imported by ordinal (high bit set)
+                if (thunk32->u1.AddressOfData & 0x80000000)
+                {
+                    WORD ordinal = (WORD)(thunk32->u1.Ordinal & 0xFFFF);
+                    std::stringstream ord;
+                    ord << "Ordinal_" << to_hex(ordinal);
+                    dll["Functions"].push_back(ord.str());
+                }
+                else
+                {
+                    // Imported by name
+                    DWORD ibnOffset = RvaToFileOffset(pe, thunk32->u1.AddressOfData);
+                    if (ibnOffset != 0 && ibnOffset < pe->MappedSize)
+                    {
+                        PIMAGE_IMPORT_BY_NAME ibn = (PIMAGE_IMPORT_BY_NAME)((uint8_t *)pe->MappedView + ibnOffset);
+                        dll["Functions"].push_back(std::string(ibn->Name));
+                    }
+                }
+                thunk32++;
             }
-            thunk++;
         }
 
         dlls.push_back(dll);
