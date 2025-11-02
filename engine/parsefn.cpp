@@ -241,7 +241,7 @@ json JsonifyDLLs(PE_FILE *pe)
         dll["DLL"] = dllName;
         dll["Functions"] = json::array();
 
-        DWORD thunkRVA = imp->OriginalFirstThunk ? imp->OriginalFirstThunk : imp->FirstThunk;
+        DWORD thunkRVA = imp->DUMMYUNIONNAME.OriginalFirstThunk ? imp->DUMMYUNIONNAME.OriginalFirstThunk : imp->FirstThunk;
         DWORD thunkOffset = RvaToFileOffset(pe, thunkRVA);
         if (thunkOffset == 0)
             break;
