@@ -147,6 +147,21 @@ json JsonifyDOSLayer(PE_FILE *pe)
     PIMAGE_DOS_HEADER dos = pe->Dos.Header;
     json j;
     j["e_magic"] = to_hex(dos->e_magic);
+    j["e_cblp"] = to_hex(dos->e_cblp);
+    j["e_cp"] = to_hex(dos->e_cp);
+    j["e_crlc"] = to_hex(dos->e_crlc);
+    j["e_cparhdr"] = to_hex(dos->e_cparhdr);
+    j["e_minalloc"] = to_hex(dos->e_minalloc);
+    j["e_maxalloc"] = to_hex(dos->e_maxalloc);
+    j["e_ss"] = to_hex(dos->e_ss);
+    j["e_sp"] = to_hex(dos->e_sp);
+    j["e_csum"] = to_hex(dos->e_csum);
+    j["e_ip"] = to_hex(dos->e_ip);
+    j["e_cs"] = to_hex(dos->e_cs);
+    j["e_lfarlc"] = to_hex(dos->e_lfarlc);
+    j["e_ovno"] = to_hex(dos->e_ovno);
+    j["e_oemid"] = to_hex(dos->e_oemid);
+    j["e_oeminfo"] = to_hex(dos->e_oeminfo);
     j["e_lfanew"] = to_hex(dos->e_lfanew);
     return j;
 }
@@ -154,49 +169,99 @@ json JsonifyDOSLayer(PE_FILE *pe)
 json JsonifyNTLayer(PE_FILE *pe)
 {
     json j;
-    WORD magic = ((PIMAGE_OPTIONAL_HEADER32)pe->Nt.FileHeader)->Magic;
+
+    // Read magic from OptionalHeader
+    uint8_t *optPtr = (uint8_t *)&pe->Nt.Header->OptionalHeader;
+    WORD magic = *(WORD *)optPtr;
 
     j["Magic"] = to_hex(magic);
     j["Type"] = (magic == 0x10B) ? "PE32" : (magic == 0x20B) ? "PE32+"
                                                              : "Unknown";
 
-    if (magic == 0x20B)
+    // Always output FileHeader regardless of magic
+    PIMAGE_FILE_HEADER fh = &pe->Nt.Header->FileHeader;
+    j["FileHeader"] = {
+        {"Machine", to_hex(fh->Machine)},
+        {"NumberOfSections", to_hex(fh->NumberOfSections)},
+        {"TimeDateStamp", to_hex(fh->TimeDateStamp)},
+        {"PointerToSymbolTable", to_hex(fh->PointerToSymbolTable)},
+        {"NumberOfSymbols", to_hex(fh->NumberOfSymbols)},
+        {"SizeOfOptionalHeader", to_hex(fh->SizeOfOptionalHeader)},
+        {"Characteristics", to_hex(fh->Characteristics)}};
+
+    // Output OptionalHeader based on detected PE type (not magic)
+    if (pe->Type == PE64 || magic == 0x20B)
     {
         PIMAGE_NT_HEADERS64 ntHeader = (PIMAGE_NT_HEADERS64)pe->Nt.Header;
-        PIMAGE_FILE_HEADER fh = &ntHeader->FileHeader;
         PIMAGE_OPTIONAL_HEADER64 oh = &ntHeader->OptionalHeader;
 
-        j["FileHeader"] = {
-            {"Machine", to_hex(fh->Machine)},
-            {"NumberOfSections", to_hex(fh->NumberOfSections)},
-            {"TimeDateStamp", to_hex(fh->TimeDateStamp)},
-            {"Characteristics", to_hex(fh->Characteristics)}};
-
         j["OptionalHeader"] = {
-            {"ImageBase", to_hex(oh->ImageBase)},
+            {"Magic", to_hex(oh->Magic)},
+            {"MajorLinkerVersion", to_hex(oh->MajorLinkerVersion)},
+            {"MinorLinkerVersion", to_hex(oh->MinorLinkerVersion)},
+            {"SizeOfCode", to_hex(oh->SizeOfCode)},
+            {"SizeOfInitializedData", to_hex(oh->SizeOfInitializedData)},
+            {"SizeOfUninitializedData", to_hex(oh->SizeOfUninitializedData)},
             {"AddressOfEntryPoint", to_hex(oh->AddressOfEntryPoint)},
+            {"BaseOfCode", to_hex(oh->BaseOfCode)},
+            {"ImageBase", to_hex(oh->ImageBase)},
+            {"SectionAlignment", to_hex(oh->SectionAlignment)},
+            {"FileAlignment", to_hex(oh->FileAlignment)},
+            {"MajorOperatingSystemVersion", to_hex(oh->MajorOperatingSystemVersion)},
+            {"MinorOperatingSystemVersion", to_hex(oh->MinorOperatingSystemVersion)},
+            {"MajorImageVersion", to_hex(oh->MajorImageVersion)},
+            {"MinorImageVersion", to_hex(oh->MinorImageVersion)},
+            {"MajorSubsystemVersion", to_hex(oh->MajorSubsystemVersion)},
+            {"MinorSubsystemVersion", to_hex(oh->MinorSubsystemVersion)},
+            {"Win32VersionValue", to_hex(oh->Win32VersionValue)},
             {"SizeOfImage", to_hex(oh->SizeOfImage)},
+            {"SizeOfHeaders", to_hex(oh->SizeOfHeaders)},
+            {"CheckSum", to_hex(oh->CheckSum)},
             {"Subsystem", to_hex(oh->Subsystem)},
-            {"DllCharacteristics", to_hex(oh->DllCharacteristics)}};
+            {"DllCharacteristics", to_hex(oh->DllCharacteristics)},
+            {"SizeOfStackReserve", to_hex(oh->SizeOfStackReserve)},
+            {"SizeOfStackCommit", to_hex(oh->SizeOfStackCommit)},
+            {"SizeOfHeapReserve", to_hex(oh->SizeOfHeapReserve)},
+            {"SizeOfHeapCommit", to_hex(oh->SizeOfHeapCommit)},
+            {"LoaderFlags", to_hex(oh->LoaderFlags)},
+            {"NumberOfRvaAndSizes", to_hex(oh->NumberOfRvaAndSizes)}};
     }
-    else if (magic == 0x10B)
+    else if (pe->Type == PE32 || magic == 0x10B)
     {
         PIMAGE_NT_HEADERS32 ntHeader = (PIMAGE_NT_HEADERS32)pe->Nt.Header;
-        PIMAGE_FILE_HEADER fh = &ntHeader->FileHeader;
         PIMAGE_OPTIONAL_HEADER32 oh = &ntHeader->OptionalHeader;
 
-        j["FileHeader"] = {
-            {"Machine", to_hex(fh->Machine)},
-            {"NumberOfSections", to_hex(fh->NumberOfSections)},
-            {"TimeDateStamp", to_hex(fh->TimeDateStamp)},
-            {"Characteristics", to_hex(fh->Characteristics)}};
-
         j["OptionalHeader"] = {
-            {"ImageBase", to_hex(oh->ImageBase)},
+            {"Magic", to_hex(oh->Magic)},
+            {"MajorLinkerVersion", to_hex(oh->MajorLinkerVersion)},
+            {"MinorLinkerVersion", to_hex(oh->MinorLinkerVersion)},
+            {"SizeOfCode", to_hex(oh->SizeOfCode)},
+            {"SizeOfInitializedData", to_hex(oh->SizeOfInitializedData)},
+            {"SizeOfUninitializedData", to_hex(oh->SizeOfUninitializedData)},
             {"AddressOfEntryPoint", to_hex(oh->AddressOfEntryPoint)},
+            {"BaseOfCode", to_hex(oh->BaseOfCode)},
+            {"BaseOfData", to_hex(oh->BaseOfData)},
+            {"ImageBase", to_hex(oh->ImageBase)},
+            {"SectionAlignment", to_hex(oh->SectionAlignment)},
+            {"FileAlignment", to_hex(oh->FileAlignment)},
+            {"MajorOperatingSystemVersion", to_hex(oh->MajorOperatingSystemVersion)},
+            {"MinorOperatingSystemVersion", to_hex(oh->MinorOperatingSystemVersion)},
+            {"MajorImageVersion", to_hex(oh->MajorImageVersion)},
+            {"MinorImageVersion", to_hex(oh->MinorImageVersion)},
+            {"MajorSubsystemVersion", to_hex(oh->MajorSubsystemVersion)},
+            {"MinorSubsystemVersion", to_hex(oh->MinorSubsystemVersion)},
+            {"Win32VersionValue", to_hex(oh->Win32VersionValue)},
             {"SizeOfImage", to_hex(oh->SizeOfImage)},
+            {"SizeOfHeaders", to_hex(oh->SizeOfHeaders)},
+            {"CheckSum", to_hex(oh->CheckSum)},
             {"Subsystem", to_hex(oh->Subsystem)},
-            {"DllCharacteristics", to_hex(oh->DllCharacteristics)}};
+            {"DllCharacteristics", to_hex(oh->DllCharacteristics)},
+            {"SizeOfStackReserve", to_hex(oh->SizeOfStackReserve)},
+            {"SizeOfStackCommit", to_hex(oh->SizeOfStackCommit)},
+            {"SizeOfHeapReserve", to_hex(oh->SizeOfHeapReserve)},
+            {"SizeOfHeapCommit", to_hex(oh->SizeOfHeapCommit)},
+            {"LoaderFlags", to_hex(oh->LoaderFlags)},
+            {"NumberOfRvaAndSizes", to_hex(oh->NumberOfRvaAndSizes)}};
     }
 
     return j;
