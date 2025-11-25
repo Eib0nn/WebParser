@@ -4,10 +4,20 @@ using Microsoft.AspNetCore.Http;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRouting();
 
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
 var app = builder.Build();
 
 app.MapGet("/", () => "PE Parser API is running on Render! 🚀");
-
+app.UseCors();
 app.MapPost("/api/parse", async (HttpContext context) =>
 {
     var form = await context.Request.ReadFormAsync();
